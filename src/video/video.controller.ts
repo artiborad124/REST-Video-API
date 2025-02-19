@@ -27,4 +27,18 @@ export class VideoUploadController {
     }
   }
 
+  @Post(':id/trim')
+  async trimVideo(
+    @Param('id') id: string,
+    @Body('start') start: number,
+    @Body('end') end: number,
+  ) {
+    try {
+      return this.videoUploadService.trimVideo(id, start, end);
+    } catch (error) {
+      console.log('error: ', error);
+      throw new BadRequestException(error.message)
+    }
+  }
+
 }
