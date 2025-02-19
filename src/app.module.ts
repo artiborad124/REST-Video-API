@@ -17,8 +17,8 @@ import { ConfigModule } from '@nestjs/config';
       synchronize: true,
     }),
     ServeStaticModule.forRoot({
-      rootPath: join(__dirname, '..', 'uploads'), // points to the uploads directory
-      serveRoot: '/uploads', // base URL for static assets
+      rootPath: join(__dirname, '..', 'uploads'),
+      serveRoot: '/uploads',
     }),
     ConfigModule.forRoot({
       isGlobal: true,
@@ -27,10 +27,10 @@ import { ConfigModule } from '@nestjs/config';
     VideoModule,
     MulterModule.register({
       storage: multer.memoryStorage(),
-      limits:{
-        fieldSize : 25 * 1024 * 1024,
+      limits: {
+        fieldSize: 25 * 1024 * 1024,
       }
     }),
   ],
 })
-export class AppModule {}
+export class AppModule { }
