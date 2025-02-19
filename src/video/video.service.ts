@@ -192,4 +192,51 @@ export class VideoUploadService {
     }
   }
 
+  async generateShareableLink(videoId: string, expiryMinutes: number): Promise<{ shareableLink: string, expiry: Date }> {
+    try {
+      const video = await this.videoRepo.findOne({ where: { id: videoId } });
+      if (!video) {
+        throw new NotFoundException('Video not found');
+      }
+
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiry = new Date(Date.now() + expiryMinutes * 60 * 1000);
+
+      video.shareToken = token;
+      video.shareExpiry = expiry;
+      const shareableLink = `http://localhost:3000/video/${video.id}/share?token=${token}`;
+      video.shareableLink = shareableLink;
+      await this.videoRepo.save(video);
+
+      return { shareableLink, expiry };
+    } catch (error) {
+      console.log('error: ', error);
+      throw new BadRequestException(error.message)
+    }
+  }
+
+  async validateSharedVideo(videoId: string, token: string): Promise<Video> {
+    try {
+      if (!token) {
+        throw new BadRequestException('Token is required');
+      }
+      const video = await this.videoRepo.findOne({ where: { id: videoId } });
+      if (!video) {
+        throw new NotFoundException('Video not found');
+      }
+
+      if (!video.shareToken || video.shareToken !== token) {
+        throw new UnauthorizedException('Invalid share token');
+      }
+
+      if (!video.shareExpiry || new Date() > new Date(video.shareExpiry)) {
+        throw new UnauthorizedException('Shareable link has expired');
+      }
+
+      return video;
+    } catch (error) {
+      console.log('error: ', error);
+      throw new BadRequestException(error.message)
+    }
+  }
 }

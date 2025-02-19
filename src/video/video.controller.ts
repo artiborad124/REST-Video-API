@@ -51,4 +51,29 @@ export class VideoUploadController {
     }
   }
 
+  @Post(':id/share')
+  async shareVideo(@Param('id') id: string, @Body('expiry') expiry: number) {
+    try {
+      return this.videoUploadService.generateShareableLink(id, expiry);
+    } catch (error) {
+      console.log('error: ', error);
+      throw new BadRequestException(error.message)
+    }
+  }
+
+  @Get(':id/share')
+  async getSharedVideo(
+    @Param('id') videoId: string,
+    @Query('token') token: string,
+  ) {
+    try {
+      const video = await this.videoUploadService.validateSharedVideo(videoId, token);
+      return {
+        videoUrl: `http://localhost:3000/uploads/${video.filename}`,
+      };
+    } catch (error) {
+      console.log('error: ', error);
+      throw new BadRequestException(error.message)
+    }
+  }
 }
