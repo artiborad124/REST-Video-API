@@ -41,4 +41,14 @@ export class VideoUploadController {
     }
   }
 
+  @Post('merge')
+  async mergeVideos(@Body('videoIds') videoIds: string[]) {
+    try {
+      return this.videoUploadService.mergeVideos(videoIds);
+    } catch (error) {
+      console.log('error: ', error);
+      throw new BadRequestException(error.message)
+    }
+  }
+
 }
