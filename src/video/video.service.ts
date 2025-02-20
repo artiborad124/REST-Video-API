@@ -6,6 +6,8 @@ import { Video } from './entity/video.entity';
 import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
 import { unlink } from 'fs/promises';
+import { join } from 'path';
+import { createReadStream, statSync } from 'fs';
 
 @Injectable()
 export class VideoService {
@@ -63,7 +65,7 @@ export class VideoService {
         throw new BadRequestException('Invalid start and end times');
       }
 
-      const outputFileName = `trimmed-${video.filename}.mp4`;
+      const outputFileName = `trimmed-${video.filename}`;
       const outputFile = `./uploads/${outputFileName}`;
       const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
@@ -148,52 +150,77 @@ export class VideoService {
     }
   }
 
-
-  async generateShareableLink(videoId: string, expiryMinutes: number): Promise<{ shareableLink: string, expiry: Date }> {
-    try {
-      const video = await this.videoRepo.findOne({ where: { id: videoId } });
-      if (!video) {
-        throw new NotFoundException('Video not found');
-      }
-
-      const token = crypto.randomBytes(32).toString('hex');
-      const expiry = new Date(Date.now() + expiryMinutes * 60 * 1000);
-
-      video.shareToken = token;
-      video.shareExpiry = expiry;
-      const shareableLink = `http://localhost:3000/video/${video.id}/share?token=${token}`;
-      video.shareableLink = shareableLink;
-      await this.videoRepo.save(video);
-
-      return { shareableLink, expiry };
-    } catch (error) {
-      console.log('error: ', error);
-      throw new BadRequestException(error.message)
+  async generateShareableLink(videoId: string, expiryMinutes: number): Promise<{ shareableLink: string; expiry: Date }> {
+    const video = await this.videoRepo.findOne({ where: { id: videoId } });
+    if (!video) {
+      throw new NotFoundException('Video not found');
     }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiry = new Date(Date.now() + expiryMinutes * 60 * 1000);
+
+    video.shareToken = token;
+    video.shareExpiry = expiry;
+
+    const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+    const shareableLink = `${baseUrl}/video/${video.id}/share?token=${token}`;
+
+    video.shareableLink = shareableLink;
+    await this.videoRepo.save(video);
+
+    return { shareableLink, expiry };
   }
 
   async validateSharedVideo(videoId: string, token: string): Promise<Video> {
-    try {
-      if (!token) {
-        throw new BadRequestException('Token is required');
-      }
-      const video = await this.videoRepo.findOne({ where: { id: videoId } });
-      if (!video) {
-        throw new NotFoundException('Video not found');
-      }
+    if (!token) {
+      throw new BadRequestException('Token is required');
+    }
 
-      if (!video.shareToken || video.shareToken !== token) {
-        throw new UnauthorizedException('Invalid share token');
-      }
+    const video = await this.videoRepo.findOne({ where: { id: videoId } });
+    if (!video) {
+      throw new NotFoundException('Video not found');
+    }
 
-      if (!video.shareExpiry || new Date() > new Date(video.shareExpiry)) {
-        throw new UnauthorizedException('Shareable link has expired');
-      }
+    if (video.shareToken !== token) {
+      throw new UnauthorizedException('Invalid share token');
+    }
 
-      return video;
-    } catch (error) {
-      console.log('error: ', error);
-      throw new BadRequestException(error.message)
+    if (!video.shareExpiry || new Date() > new Date(video.shareExpiry)) {
+      throw new UnauthorizedException('Shareable link has expired');
+    }
+
+    return video;
+  }
+
+  async streamVideo(videoId: string, token: string, req: any, res: any): Promise<void> {
+    const video = await this.validateSharedVideo(videoId, token);
+    
+    const filePath = join(__dirname, '../../uploads', video.filename);
+    if (!fs.existsSync(filePath)) {
+      throw new NotFoundException('Video file not found');
+    }
+
+    const stat = statSync(filePath);
+    const fileSize = stat.size;
+    const range = req.headers.range;
+
+    res.setHeader('Content-Type', 'video/mp4');
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const chunkSize = end - start + 1;
+
+      res.status(206).set({
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunkSize,
+      });
+
+      createReadStream(filePath, { start, end }).pipe(res);
+    } else {
+      res.setHeader('Content-Length', fileSize);
+      createReadStream(filePath).pipe(res);
     }
   }
 }

@@ -1,7 +1,9 @@
-import { Controller, Post, UseInterceptors, UploadedFile, Param, Body, BadRequestException, Get, Query } from '@nestjs/common';
+import { Controller, Post, UseInterceptors, UploadedFile, Param, Body, BadRequestException, Get, Query, NotFoundException, Res, Req } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { VideoService } from './video.service';
-
+import { diskStorage } from 'multer';
+import { extname } from 'path';
+import { Response, Request } from 'express';
 declare global {
   namespace Express {
     export interface Multer {
@@ -12,17 +14,33 @@ declare global {
 
 @Controller('video')
 export class VideoController {
-  constructor(private readonly videoService: VideoService) { }
+  constructor(private readonly videoService: VideoService) {}
 
   @Post('upload')
-  @UseInterceptors(FileInterceptor('file', { dest: './uploads' }))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads',
+        filename: (req, file, callback) => {
+          const uniqueSuffix =
+            Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const extension = extname(file.originalname); // Get the file extension
+          const filename = `${uniqueSuffix}${extension}`; // Append the extension to the filename
+          callback(null, filename);
+        },
+      }),
+    }),
+  )
   async uploadVideo(@UploadedFile() file: Express.Multer.File) {
     try {
       const processedVideoPath = await this.videoService.uploadVideo(file);
-      return { message: 'Video uploaded and processed successfully', path: processedVideoPath };
+      return {
+        message: 'Video uploaded and processed successfully',
+        path: processedVideoPath,
+      };
     } catch (error) {
       console.log('error: ', error);
-      throw new BadRequestException(error.message)
+      throw new BadRequestException(error.message);
     }
   }
 
@@ -36,7 +54,7 @@ export class VideoController {
       return this.videoService.trimVideo(id, start, end);
     } catch (error) {
       console.log('error: ', error);
-      throw new BadRequestException(error.message)
+      throw new BadRequestException(error.message);
     }
   }
 
@@ -46,7 +64,7 @@ export class VideoController {
       return this.videoService.mergeVideos(videoIds);
     } catch (error) {
       console.log('error: ', error);
-      throw new BadRequestException(error.message)
+      throw new BadRequestException(error.message);
     }
   }
 
@@ -56,23 +74,27 @@ export class VideoController {
       return this.videoService.generateShareableLink(id, expiry);
     } catch (error) {
       console.log('error: ', error);
-      throw new BadRequestException(error.message)
+      throw new BadRequestException(error.message);
     }
   }
 
+
   @Get(':id/share')
-  async getSharedVideo(
-    @Param('id') videoId: string,
-    @Query('token') token: string,
+  async handleVideoRequest(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('id') id: string,
+    @Query('token') token?: string,
+    @Query('expiry') expiryMinutes?: number,
   ) {
-    try {
-      const video = await this.videoService.validateSharedVideo(videoId, token);
-      return {
-        videoUrl: `http://localhost:3000/uploads/${video.filename}`,
-      };
-    } catch (error) {
-      console.log('error: ', error);
-      throw new BadRequestException(error.message)
+    if (!token) {
+      if (!expiryMinutes) {
+        throw new BadRequestException('Expiry time is required when generating a link');
+      }
+      const response = await this.videoService.generateShareableLink(id, expiryMinutes);
+      return res.json(response);
     }
+
+    await this.videoService.streamVideo(id, token, req, res);
   }
 }

@@ -4,7 +4,7 @@ import { Request, Response, NextFunction } from 'express';
 @Injectable()
 export class AuthMiddleware implements NestMiddleware {
   use(req: Request, res: Response, next: NextFunction) {
-    if (req.originalUrl.includes('/share') || req.originalUrl.includes('/uploads')  ) {
+    if (req.originalUrl.includes('/share') || req.originalUrl.includes('/uploads') ||  req.originalUrl.includes('/stream') ) {
       return next();
     }
     const token = req.headers['authorization'];
