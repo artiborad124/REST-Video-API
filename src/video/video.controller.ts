@@ -68,17 +68,6 @@ export class VideoController {
     }
   }
 
-  @Post(':id/share')
-  async shareVideo(@Param('id') id: string, @Body('expiry') expiry: number) {
-    try {
-      return this.videoService.generateShareableLink(id, expiry);
-    } catch (error) {
-      console.log('error: ', error);
-      throw new BadRequestException(error.message);
-    }
-  }
-
-
   @Get(':id/share')
   async handleVideoRequest(
     @Req() req: Request,
