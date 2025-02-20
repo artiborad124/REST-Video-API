@@ -8,7 +8,7 @@ import * as crypto from 'crypto';
 import { unlink } from 'fs/promises';
 
 @Injectable()
-export class VideoUploadService {
+export class VideoService {
   constructor(
     @InjectRepository(Video) private readonly videoRepo: Repository<Video>,
   ) { }
@@ -148,49 +148,6 @@ export class VideoUploadService {
     }
   }
 
-  async processVideoForMerge(videoPath: string): Promise<string> {
-    try {
-      return new Promise((resolve, reject) => {
-        ffmpeg.ffprobe(videoPath, (err, metadata) => {
-          if (err) return reject(new BadRequestException('Error probing video: ' + err.message));
-
-          const videoStream = metadata.streams.find(s => s.codec_type === 'video');
-          if (!videoStream) return reject(new BadRequestException('No video stream found'));
-
-          const width = videoStream.width;
-          const height = videoStream.height;
-
-          const targetWidth = 1920;
-          const targetHeight = 1080;
-
-          let filter = '';
-          if (width < height || width < targetWidth) {
-            filter = `scale=-1:${targetHeight},pad=${targetWidth}:${targetHeight}:(ow-iw)/2:(oh-ih)/2:black`;
-          } else {
-            filter = `scale=${targetWidth}:${targetHeight}`;
-          }
-
-          const outputFile = videoPath.replace('.mp4', '_processed.mp4');
-
-          ffmpeg(videoPath)
-            .videoFilters(filter)
-            .outputOptions(['-c:v', 'libx264', '-c:a', 'aac']) // re-encode for consistency
-            .output(outputFile)
-            .on('end', () => {
-              resolve(outputFile);
-            })
-            .on('error', (error) => {
-              console.error('Error processing video:', error);
-              reject(new BadRequestException('Error processing video: ' + error.message));
-            })
-            .run();
-        });
-      });
-    } catch (error) {
-      console.log('error: ', error);
-      throw new BadRequestException(error.message)
-    }
-  }
 
   async generateShareableLink(videoId: string, expiryMinutes: number): Promise<{ shareableLink: string, expiry: Date }> {
     try {
