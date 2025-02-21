@@ -95,57 +95,61 @@ export class VideoService {
   async mergeVideos(videoIds: string[]) {
     try {
       const videos = await this.videoRepo.findByIds(videoIds);
-      if (videos.length !== videoIds.length) {
+
+      if (videos.length !== videoIds.length || videoIds.length === 0 || !videoIds){
         throw new BadRequestException('Invalid video IDs');
       }
-
+  
       const timestamp = Date.now();
       const outputFileName = `merged-${timestamp}.mp4`;
       const outputPath = `./uploads/${outputFileName}`;
       const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
-
-      return new Promise((resolve, reject) => {
-        const ffmpegCmd = ffmpeg();
-
-        // Convert each video to raw format for concatenation
+  
+      return await new Promise(async (resolve, reject) => {
         const tempFiles = videos.map((video, index) => `./uploads/temp_${index}.ts`);
-
-        let processCount = 0;
-        videos.forEach((video, index) => {
-          ffmpeg(video.filepath)
-            .outputOptions(['-c', 'copy', '-bsf:v', 'h264_mp4toannexb', '-f', 'mpegts'])
-            .output(tempFiles[index])
-            .on('end', () => {
-              processCount++;
-              if (processCount === videos.length) {
-                // Once all are converted, concatenate them
-                ffmpeg()
-                  .input(`concat:${tempFiles.join('|')}`)
-                  .outputOptions(['-c', 'copy', '-bsf:a', 'aac_adtstoasc'])
-                  .output(outputPath)
-                  .on('end', async () => {
-                    await Promise.all(tempFiles.map(file => unlink(file)));
-                    const mergedVideoUrl = `${BASE_URL}/uploads/${outputFileName}`;
-                    resolve({
-                      message: 'Video merged successfully',
-                      mergedVideoUrl: mergedVideoUrl,
-                    });
-                  })
-                  .on('error', (err) => {
-                    console.error('FFmpeg error:', err);
-                    reject(new BadRequestException('Error merging videos'));
-                  })
-                  .run();
-              }
+      
+        // Create an array of promises for each video processing task
+        const videoProcessingPromises = videos.map((video, index) => {
+          return new Promise((resolve, reject) => {
+            ffmpeg(video.filepath)
+              .outputOptions(['-c', 'copy', '-bsf:v', 'h264_mp4toannexb', '-f', 'mpegts'])
+              .output(tempFiles[index])
+              .on('end', resolve)
+              .on('error', reject)
+              .run();
+          });
+        });
+      
+        // Wait for all video processing to complete
+        try {
+          await Promise.all(videoProcessingPromises);
+      
+          // Once all are converted, concatenate them
+          ffmpeg()
+            .input(`concat:${tempFiles.join('|')}`)
+            .outputOptions(['-c', 'copy', '-bsf:a', 'aac_adtstoasc'])
+            .output(outputPath)
+            .on('end', async () => {
+              // Clean up temporary files
+              await Promise.all(tempFiles.map(file => unlink(file)));
+              const mergedVideoUrl = `${BASE_URL}/uploads/${outputFileName}`;
+              resolve({
+                message: 'Video merged successfully',
+                mergedVideoUrl: mergedVideoUrl,
+              });
             })
             .on('error', (err) => {
-              console.error('FFmpeg error:', err);
-              reject(new BadRequestException('Error processing video'));
+              // Handle errors during concatenation
+              reject(new BadRequestException('Error merging videos'));
             })
             .run();
-        });
+        } catch (err) {
+          // Handle errors from the individual video processing
+          reject(new BadRequestException('Error processing videos'));
+        }
       });
     } catch (error) {
+      console.log('Error in mergeVideos:', error); // Log error
       throw new BadRequestException(error.message);
     }
   }
